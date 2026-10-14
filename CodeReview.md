@@ -2,7 +2,7 @@
 
 **Reviewer:** Hemant Panchal  
 **Target File:** [`CodeToReview.cs`](CodeToReview.cs)  
-**PR Review Status:** ❌ **CHANGES REQUESTED** (Cannot merge into production due to compilation blockers and critical runtime defects)
+**PR Review Status:** ❌ **CHANGES REQUESTED** (Cannot merge into production due to compilation blockers, runtime defects, and architectural violations)
 
 ---
 
@@ -10,14 +10,21 @@
 1. [Executive Summary](#executive-summary)
 2. [1. Blockers & Compilation Errors](#1-blockers--compilation-errors)
 3. [2. Bugs & Logic Flaws](#2-bugs--logic-flaws)
-4. [Defect Summary Matrix (Points 1 & 2)](#defect-summary-matrix-points-1--2)
-5. [Upcoming Review Sections (Next Increments)](#upcoming-review-sections-next-increments)
+4. [3. Architecture & SOLID Principles](#3-architecture--solid-principles)
+5. [4. Performance Considerations & Modern .NET 8](#4-performance-considerations--modern-net-8)
+6. [Defect Summary Matrix](#defect-summary-matrix)
+7. [Upcoming Review Sections (Next Increments)](#upcoming-review-sections-next-increments)
 
 ---
 
 ## Executive Summary
 
-This initial code review focuses on **critical compilation blockers** and **runtime bugs / logic flaws** within `CodeToReview.cs`. The pull request in its current state cannot compile due to a namespace spelling error, and if compiled, contains severe runtime bugs including unreachable code, inverted boolean filter logic, data truncation failures, and memory/stack trace issues.
+This code review documents **compilation blockers**, **runtime bugs / logic flaws**, **architectural & SOLID violations**, and **performance inefficiencies** in `CodeToReview.cs`. 
+
+Beyond the build failure and logic flaws, the current design exhibits serious architectural issues:
+- **Single Responsibility Principle (SRP) Violation:** `BirthingUnit` serves as a person factory, but also mutates names and handles marriage ceremonies.
+- **State Leaks & Accumulation:** `_people` accumulates state across method calls and exposes its internal mutable list directly to callers.
+- **Performance Overhead:** Instantiating `new Random()` inside tight loops, missing list pre-allocations, and repeated LINQ calculations create unnecessary GC pressure.
 
 ---
 
@@ -31,7 +38,6 @@ This initial code review focuses on **critical compilation blockers** and **runt
   ```text
   error CS0234: The type or namespace name 'Collegctions' does not exist in the namespace 'System' (are you missing an assembly reference?)
   ```
-  The project cannot compile or build until this is corrected.
 * **Recommended Fix:**
   ```csharp
   using System.Collections.Generic;
@@ -48,72 +54,39 @@ This initial code review focuses on **critical compilation blockers** and **runt
   ```csharp
   private static readonly DateTimeOffset Under16 = DateTimeOffset.UtcNow.AddYears(-15);
   ```
-  - `static readonly` fields are evaluated only once when the class is first loaded into memory. In a long-running service or web application, this timestamp never updates and becomes progressively stale over time.
-  - Calling `AddYears(-15)` establishes a 15-year cutoff rather than an under-16 boundary (someone born 15 years and 1 day ago is 15, not 16).
+  - `static readonly` fields are evaluated only once when the class is loaded. In long-running processes, this date becomes progressively stale.
+  - `AddYears(-15)` represents an under-15 cutoff rather than under-16.
 * **Recommended Fix:**
-  Use a dynamic property or method that evaluates current time on invocation:
   ```csharp
   private static DateTimeOffset Under16Cutoff => DateTimeOffset.UtcNow.AddYears(-16);
   ```
-
----
 
 ### 2.2 Exclusive Upper Bound on `Random.Next(0, 1)` (Betty Unreachable)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L66-L74)
 * **Severity:** **Critical Logic Bug**
 * **Issue:**
-  ```csharp
-  var random = new Random();
-  if (random.Next(0, 1) == 0)
-  {
-      name = "Bob";
-  }
-  else
-  {
-      name = "Betty";
-  }
-  ```
-  `Random.Next(int minValue, int maxValue)` has an **exclusive** upper bound. Therefore, `random.Next(0, 1)` can only ever return `0`. As a result:
-  - `name` is always `"Bob"`.
-  - The `else` block (`name = "Betty"`) is completely unreachable dead code.
+  `Random.Next(0, 1)` has an exclusive upper bound, returning only `0`. Name generation is hardcoded to `"Bob"`, and `"Betty"` is unreachable dead code.
 * **Recommended Fix:**
   ```csharp
-  // Random.Shared avoids per-iteration allocation; upper bound 2 allows values 0 and 1
   string name = Random.Shared.Next(0, 2) == 0 ? "Bob" : "Betty";
   ```
-
----
 
 ### 2.3 Leap Year Omission & 356 Days Drift
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L78)
 * **Severity:** **Major Bug**
 * **Issue:**
-  ```csharp
-  DateTime.UtcNow.Subtract(new TimeSpan(random.Next(18, 85) * 356, 0, 0, 0))
-  ```
-  - A standard calendar year has 365 days, not 356 days. Multiplying by 356 introduces a **9-day error per year**. For an 80-year-old, this creates an error of over 720 days (~2 full years).
-  - Multiplying fixed day counts completely ignores leap years.
+  Using 356 days instead of 365 introduces a 9-day drift per year and disregards leap years.
 * **Recommended Fix:**
-  Use calendar-aware date arithmetic:
   ```csharp
-  int age = Random.Shared.Next(18, 86); // 18 to 85 inclusive
+  int age = Random.Shared.Next(18, 86);
   DateTime dateOfBirth = DateTime.UtcNow.AddYears(-age);
   ```
-
----
 
 ### 2.4 Loss of Original Exception Stack Trace (`CS0168`)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L80-L84)
 * **Severity:** **Major Bug**
 * **Issue:**
-  ```csharp
-  catch (Exception e)
-  {
-      throw new Exception("Something failed in user creation");
-  }
-  ```
-  - Catching `e` and throwing a new `Exception` without passing `e` as the `innerException` permanently erases the original stack trace and root cause.
-  - The variable `e` is declared but never read, producing compiler warning `CS0168`.
+  Catching `e` and throwing a new `Exception` without setting `innerException` permanently erases the original stack trace and triggers `CS0168`.
 * **Recommended Fix:**
   ```csharp
   catch (Exception ex)
@@ -122,17 +95,11 @@ This initial code review focuses on **critical compilation blockers** and **runt
   }
   ```
 
----
-
 ### 2.5 Inverted Age Filter Logic in `GetBobs`
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L95-L96)
 * **Severity:** **Critical Logic Bug**
 * **Issue:**
-  ```csharp
-  return olderThan30 ? _people.Where(x => x.Name == "Bob" && x.DOB >= DateTime.Now.Subtract(new TimeSpan(30 * 356, 0, 0, 0))) : ...
-  ```
-  - If a person is older than 30, their birth date is **before** (less than or equal to) the 30-year cutoff date.
-  - Using `>=` checks if their birth date is **after** the cutoff, which returns individuals **younger than 30**, directly contradicting the method's parameter and purpose.
+  Using `x.DOB >= DateTime.Now.Subtract(...)` returns people *younger* than 30 instead of *older* than 30.
 * **Recommended Fix:**
   ```csharp
   DateTime cutoff = DateTime.UtcNow.AddYears(-30);
@@ -141,58 +108,32 @@ This initial code review focuses on **critical compilation blockers** and **runt
       : _people.Where(x => x.Name == "Bob");
   ```
 
----
-
 ### 2.6 Unhandled Null References in `GetMarried`
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L103-L105)
 * **Severity:** **Major Bug**
 * **Issue:**
-  ```csharp
-  public string GetMarried(People p, string lastName)
-  {
-      if (lastName.Contains("test"))
-          return p.Name;
-  ```
-  - If `p` is `null` or `lastName` is `null`, invoking `lastName.Contains(...)` or `p.Name` will immediately throw an unhandled `NullReferenceException`.
+  If `p` or `lastName` is `null`, calling `lastName.Contains(...)` or `p.Name` throws an unhandled `NullReferenceException`.
 * **Recommended Fix:**
-  Add defensive argument validation:
   ```csharp
   ArgumentNullException.ThrowIfNull(p);
   ArgumentException.ThrowIfNullOrWhiteSpace(lastName);
   ```
 
----
-
 ### 2.7 Integer-String Concatenation in Length Check
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L108)
 * **Severity:** **Critical Logic Bug**
 * **Issue:**
-  ```csharp
-  if ((p.Name.Length + lastName).Length > 255)
-  ```
-  - The expression `(p.Name.Length + lastName)` adds an integer (`p.Name.Length`) and a string (`lastName`).
-  - In C#, this converts the integer into a string and concatenates it (e.g., if `p.Name.Length` is 4 and `lastName` is `"Smith"`, the result is `"4Smith"`, whose `.Length` is 6).
-  - It does **not** calculate the combined character count of `p.Name` + `lastName`.
+  `(p.Name.Length + lastName).Length` concatenates an integer with a string (e.g., `"4Smith".Length == 6`), producing incorrect length validation.
 * **Recommended Fix:**
   ```csharp
   if ((p.Name.Length + 1 + lastName.Length) > 255)
   ```
 
----
-
 ### 2.8 Discarded Substring Return Value (String Immutability)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L110-L113)
 * **Severity:** **Critical Logic Bug**
 * **Issue:**
-  ```csharp
-  if ((p.Name.Length + lastName).Length > 255)
-  {
-      (p.Name + " " + lastName).Substring(0, 255);
-  }
-  return p.Name + " " + lastName;
-  ```
-  - Strings in .NET are immutable. `Substring(0, 255)` computes a new string and returns it, but the return value is ignored.
-  - The method subsequently returns the original untruncated string, meaning name truncation **never happens**.
+  `(p.Name + " " + lastName).Substring(0, 255);` computes a substring but discards it. The full untruncated name is returned.
 * **Recommended Fix:**
   ```csharp
   string fullName = $"{p.Name} {lastName}";
@@ -201,18 +142,135 @@ This initial code review focuses on **critical compilation blockers** and **runt
 
 ---
 
-## Defect Summary Matrix (Points 1 & 2)
+## 3. Architecture & SOLID Principles
 
-| # | File Reference | Category | Defect Description | Impact / Severity |
-|---|----------------|----------|--------------------|-------------------|
-| 1 | Line 2 | Blocker | Namespace typo `System.Collegctions.Generic` | **Blocker** (`CS0234` compile error) |
-| 2 | Line 12 | Logic Bug | Stale static `Under16` & `-15` threshold | **Major** (Stale data over time) |
-| 3 | Line 66 | Logic Bug | `Random.Next(0, 1)` exclusive upper bound | **Critical** ("Betty" unreachable dead code) |
-| 4 | Line 78 | Logic Bug | 356 days instead of 365, leap year omission | **Major** (9-day drift per year) |
-| 5 | Line 82 | Error Handling | Discarded exception stack trace & unused variable | **Major** (Root cause loss & `CS0168`) |
-| 6 | Line 95 | Logic Bug | Inverted comparison in `GetBobs` (`>=` vs `<=`) | **Critical** (Inverted filter results) |
-| 7 | Line 103 | Null Safety | Missing null validation for `p` and `lastName` | **Major** (`NullReferenceException`) |
-| 8 | Line 108 | Logic Bug | `(p.Name.Length + lastName).Length` concatenation | **Critical** (Corrupted length calculation) |
-| 9 | Line 111 | Logic Bug | Discarded `Substring(0, 255)` operation | **Critical** (Truncation never occurs) |
+### 3.1 Single Responsibility Principle (SRP) Violation
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L101-L116)
+* **Severity:** **Major Architectural Flaw**
+* **Issue:**
+  `BirthingUnit` is designed as a factory/generator responsible for generating new people profiles. Including `GetMarried` inside `BirthingUnit` violates SRP. Marriage, surname changes, and character constraints are domain entity behaviors or domain service concerns, not birthing unit responsibilities.
+* **Recommended Fix:**
+  Relocate marriage and name change logic into the `Person` class (e.g., `person.ChangeLastName(lastName)`) or a dedicated `MarriageService`.
 
 ---
+
+### 3.2 State Leaks & Accumulation Across Invocations
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L36, #L86)
+* **Severity:** **Major Design Flaw**
+* **Issue:**
+  - `_people` is stored as an instance field. Each call to `GetPeople(n)` appends new records to the existing list. Calling `GetPeople(10)` twice leaves the instance holding 20 records.
+  - `GetPeople` returns the internal mutable `List<People>`, allowing external callers to clear or modify the class's internal state directly (`unit.GetPeople(5).Clear()`).
+* **Recommended Fix:**
+  Make generator methods stateless and return `IReadOnlyList<Person>`:
+  ```csharp
+  public IReadOnlyList<Person> GetPeople(int count)
+  {
+      var people = new List<Person>(count);
+      // populate...
+      return people;
+  }
+  ```
+
+---
+
+### 3.3 Immutability of Historical Entity Attributes
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L18)
+* **Severity:** **Best Practice / Design**
+* **Issue:**
+  `DOB` (Date of Birth) is a historical fact that never changes after birth. It should not expose a public or private setter that allows mutation.
+* **Recommended Fix:**
+  Use getter-only properties or `init` accessors:
+  ```csharp
+  public DateOnly DateOfBirth { get; init; }
+  ```
+
+---
+
+### 3.4 Multi-Class File Bundling
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L8, #L29)
+* **Severity:** **Maintainability / Clean Code**
+* **Issue:**
+  Both `People` (domain entity) and `BirthingUnit` (service/factory) are bundled into a single file. This violates C# conventions and decreases maintainability as the system grows.
+* **Recommended Fix:**
+  Split classes into distinct files: `Person.cs` and `BirthingUnit.cs`.
+
+---
+
+## 4. Performance Considerations & Modern .NET 8
+
+### 4.1 Repeated `new Random()` Allocation in Loops
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L64)
+* **Severity:** **Performance**
+* **Issue:**
+  Instantiating `new Random()` on every iteration inside a loop creates excessive heap allocations and GC overhead. In high-throughput scenarios, tight allocation loops can also generate identical seed sequences on older runtimes.
+* **Recommended Fix:**
+  Use .NET 6+ thread-safe `Random.Shared`:
+  ```csharp
+  Random.Shared.Next(0, 2);
+  ```
+
+---
+
+### 4.2 Missing List Capacity Pre-allocation
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L54-L56)
+* **Severity:** **Performance**
+* **Issue:**
+  When generating `i` records, the default `List` capacity starts at 0 or 4 and doubles repeatedly as elements are added, causing multiple array allocations and memory copies.
+* **Recommended Fix:**
+  Pre-allocate capacity:
+  ```csharp
+  var people = new List<Person>(count);
+  ```
+
+---
+
+### 4.3 Repeated LINQ Date Recalculations
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L96)
+* **Severity:** **Performance**
+* **Issue:**
+  Evaluating `DateTime.Now.Subtract(...)` inside the `.Where()` predicate recomputes the date difference on every single element in the collection during iteration.
+* **Recommended Fix:**
+  Calculate the cutoff date once before executing the query:
+  ```csharp
+  DateTime cutoff = DateTime.UtcNow.AddYears(-30);
+  return olderThan30 ? _people.Where(x => x.DOB <= cutoff) : ...;
+  ```
+
+---
+
+### 4.4 Modern .NET 8 Idioms: `DateOnly` and String Range Slicing
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L17, #L111)
+* **Severity:** **Modern .NET Best Practice**
+* **Issue:**
+  - Date of birth represents a calendar date with no time or timezone component. Mixing `DateTime` and `DateTimeOffset` causes time-of-day edge cases.
+  - Substring string manipulations allocate intermediate strings unnecessarily.
+* **Recommended Fix:**
+  - Use modern .NET `DateOnly`.
+  - Use string interpolation and range indexing `fullName[..255]`.
+
+---
+
+## Defect Summary Matrix
+
+| # | File Ref | Category | Description | Severity |
+|---|----------|----------|-------------|----------|
+| 1 | Line 2 | Blocker | Typo `System.Collegctions.Generic` | **Blocker** (`CS0234`) |
+| 2 | Line 12 | Logic Bug | Stale static `Under16` & `-15` threshold | **Major** |
+| 3 | Line 66 | Logic Bug | `Random.Next(0, 1)` exclusive upper bound | **Critical** |
+| 4 | Line 78 | Logic Bug | 356 days instead of 365, leap year omission | **Major** |
+| 5 | Line 82 | Error Handling | Discarded exception stack trace & unused variable | **Major** (`CS0168`) |
+| 6 | Line 95 | Logic Bug | Inverted comparison in `GetBobs` (`>=` vs `<=`) | **Critical** |
+| 7 | Line 103 | Null Safety | Missing null validation for `p` and `lastName` | **Major** |
+| 8 | Line 108 | Logic Bug | `(p.Name.Length + lastName).Length` concatenation | **Critical** |
+| 9 | Line 111 | Logic Bug | Discarded `Substring(0, 255)` operation | **Critical** |
+| 10 | Line 101 | Architecture | `GetMarried` violates SRP in `BirthingUnit` | **Major** |
+| 11 | Line 36 | Architecture | State accumulation & leaking mutable collection | **Major** |
+| 12 | Line 18 | Architecture | Mutable Date of Birth property | **Minor** |
+| 13 | Line 8 | Clean Code | Multiple classes bundled in single file | **Minor** |
+| 14 | Line 64 | Performance | `new Random()` allocated inside loop | **Minor** |
+| 15 | Line 54 | Performance | Missing list capacity pre-allocation | **Minor** |
+| 16 | Line 96 | Performance | Repeated date arithmetic inside LINQ predicate | **Minor** |
+
+---
+
+
