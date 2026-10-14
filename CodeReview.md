@@ -2,7 +2,7 @@
 
 **Reviewer:** Hemant Panchal  
 **Target File:** [`CodeToReview.cs`](CodeToReview.cs)  
-**PR Review Status:** ❌ **CHANGES REQUESTED** (Cannot merge into production due to compilation blockers, runtime defects, and architectural violations)
+**PR Review Status:** ❌ **CHANGES REQUESTED** (Cannot merge into production due to compilation blockers, runtime defects, architectural violations, and code quality issues)
 
 ---
 
@@ -12,19 +12,20 @@
 3. [2. Bugs & Logic Flaws](#2-bugs--logic-flaws)
 4. [3. Architecture & SOLID Principles](#3-architecture--solid-principles)
 5. [4. Performance Considerations & Modern .NET 8](#4-performance-considerations--modern-net-8)
-6. [Defect Summary Matrix](#defect-summary-matrix)
-7. [Upcoming Review Sections (Next Increments)](#upcoming-review-sections-next-increments)
+6. [5. Code Style, Naming Conventions & Documentation](#5-code-style-naming-conventions--documentation)
+7. [Defect Summary Matrix](#defect-summary-matrix)
+8. [Upcoming Review Sections (Next Increments)](#upcoming-review-sections-next-increments)
 
 ---
 
 ## Executive Summary
 
-This code review documents **compilation blockers**, **runtime bugs / logic flaws**, **architectural & SOLID violations**, and **performance inefficiencies** in `CodeToReview.cs`. 
+This code review documents **compilation blockers**, **runtime bugs / logic flaws**, **architectural & SOLID violations**, **performance inefficiencies**, and **code style / documentation issues** in `CodeToReview.cs`.
 
-Beyond the build failure and logic flaws, the current design exhibits serious architectural issues:
-- **Single Responsibility Principle (SRP) Violation:** `BirthingUnit` serves as a person factory, but also mutates names and handles marriage ceremonies.
-- **State Leaks & Accumulation:** `_people` accumulates state across method calls and exposes its internal mutable list directly to callers.
-- **Performance Overhead:** Instantiating `new Random()` inside tight loops, missing list pre-allocations, and repeated LINQ calculations create unnecessary GC pressure.
+Beyond the build failure and logic flaws, the current code exhibits significant readability and API design shortcomings:
+- **Misleading Naming:** Using plural `People` for a singular domain entity and single-letter parameters (`i`, `j`, `p`).
+- **Erroneous XML Documentation:** Parameter and return types in XML docs do not match actual method signatures (`param name="j"` vs `i`, `returns List<object>` vs `List<People>`).
+- **Missing Guard Clauses:** No defensive boundary validation for method parameters.
 
 ---
 
@@ -152,8 +153,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
 * **Recommended Fix:**
   Relocate marriage and name change logic into the `Person` class (e.g., `person.ChangeLastName(lastName)`) or a dedicated `MarriageService`.
 
----
-
 ### 3.2 State Leaks & Accumulation Across Invocations
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L36, #L86)
 * **Severity:** **Major Design Flaw**
@@ -171,8 +170,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
   }
   ```
 
----
-
 ### 3.3 Immutability of Historical Entity Attributes
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L18)
 * **Severity:** **Best Practice / Design**
@@ -183,8 +180,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
   ```csharp
   public DateOnly DateOfBirth { get; init; }
   ```
-
----
 
 ### 3.4 Multi-Class File Bundling
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L8, #L29)
@@ -209,8 +204,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
   Random.Shared.Next(0, 2);
   ```
 
----
-
 ### 4.2 Missing List Capacity Pre-allocation
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L54-L56)
 * **Severity:** **Performance**
@@ -221,8 +214,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
   ```csharp
   var people = new List<Person>(count);
   ```
-
----
 
 ### 4.3 Repeated LINQ Date Recalculations
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L96)
@@ -236,8 +227,6 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
   return olderThan30 ? _people.Where(x => x.DOB <= cutoff) : ...;
   ```
 
----
-
 ### 4.4 Modern .NET 8 Idioms: `DateOnly` and String Range Slicing
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L17, #L111)
 * **Severity:** **Modern .NET Best Practice**
@@ -247,6 +236,74 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
 * **Recommended Fix:**
   - Use modern .NET `DateOnly`.
   - Use string interpolation and range indexing `fullName[..255]`.
+
+---
+
+## 5. Code Style, Naming Conventions & Documentation
+
+### 5.1 Plural Entity Class Naming (`People` vs `Person`)
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L9)
+* **Severity:** **Naming / Code Style**
+* **Issue:**
+  The class represents a single individual entity holding one `Name` and one `DOB`. Standard .NET naming conventions specify singular nouns for entity classes (`Person`), reserving plural names for collections or namespaces.
+* **Recommended Fix:**
+  Rename `People` to `Person`.
+
+---
+
+### 5.2 Non-Descriptive Parameter Names (`i`, `j`, `p`)
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L48, #L51, #L94)
+* **Severity:** **Clean Code / Readability**
+* **Issue:**
+  - In `GetPeople(int i)`, parameter `i` obscures the parameter's meaning.
+  - In `for (int j = 0; j < i; j++)`, `j` is unconventional for an outer loop.
+  - In `GetMarried(People p, string lastName)`, parameter `p` is an abbreviated identifier that reduces code readability.
+* **Recommended Fix:**
+  Use descriptive identifiers: `count` (or `numberOfPeople`), `index`, and `person`.
+
+---
+
+### 5.3 Inaccurate & Outdated XML Documentation
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L32-L34, #L43-L47)
+* **Severity:** **Documentation Quality**
+* **Issue:**
+  - Line 33: `<summary>MaxItemsToRetrieve</summary>` on private field `_people` is inaccurate and misleading.
+  - Lines 44-47: XML documentation for `GetPeople` contains multiple errors:
+    * Summary reads `GetPeoples` (plural typo).
+    * `<param name="j">` documents parameter `j`, but the actual method parameter is `i`.
+    * `<returns>List<object></returns>` documents return type as `List<object>`, but the actual return type is `List<People>`.
+* **Recommended Fix:**
+  Correct the XML documentation tags or remove invalid comments:
+  ```csharp
+  /// <summary>
+  /// Generates a collection of simulated people.
+  /// </summary>
+  /// <param name="count">The number of individuals to generate.</param>
+  /// <returns>A list of generated <see cref="Person"/> instances.</returns>
+  ```
+
+---
+
+### 5.4 Typo in Source Comments (`dandon`)
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L55)
+* **Severity:** **Minor Style**
+* **Issue:**
+  `// Creates a dandon Name` contains an obvious spelling error (`dandon` instead of `random`).
+* **Recommended Fix:**
+  Change to `// Creates a random name`.
+
+---
+
+### 5.5 Missing Defensive Parameter Validation
+* **File:** [`CodeToReview.cs`](CodeToReview.cs#L48)
+* **Severity:** **Defensive Programming**
+* **Issue:**
+  `GetPeople(int i)` does not validate against negative inputs. Calling `GetPeople(-5)` executes the method without error but creates a confusing runtime contract.
+* **Recommended Fix:**
+  Add standard guard clauses:
+  ```csharp
+  ArgumentOutOfRangeException.ThrowIfNegative(count);
+  ```
 
 ---
 
@@ -270,7 +327,16 @@ Beyond the build failure and logic flaws, the current design exhibits serious ar
 | 14 | Line 64 | Performance | `new Random()` allocated inside loop | **Minor** |
 | 15 | Line 54 | Performance | Missing list capacity pre-allocation | **Minor** |
 | 16 | Line 96 | Performance | Repeated date arithmetic inside LINQ predicate | **Minor** |
+| 17 | Line 9 | Naming | Plural entity name `People` instead of `Person` | **Minor** |
+| 18 | Lines 48, 94 | Naming | Single-letter parameter names (`i`, `j`, `p`) | **Minor** |
+| 19 | Lines 33, 44 | Documentation | Misleading XML docs (`param name="j"`, `List<object>`) | **Minor** |
+| 20 | Line 55 | Clean Code | Comment typo (`dandon` -> `random`) | **Trivial** |
+| 21 | Line 48 | Robustness | Missing guard clause for negative counts | **Minor** |
 
 ---
 
+## Upcoming Review Sections (Next Increments)
 
+* **Section 6:** Reusability & Code Extensibility (LINQ Extensions, `IPersonGenerator`, `TimeProvider`)
+* **Section 7:** Assumptions, Design Decisions & Trade-offs
+* **Section 8:** Proposed Production Refactoring (.NET 8 / C# 12) & Generative AI Usage Disclosure
