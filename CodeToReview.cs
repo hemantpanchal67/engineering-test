@@ -5,14 +5,19 @@ using System.Linq;
 
 namespace Utility.Valocity.ProfileHelper
 {
+    // [Architecture / SOLID]: Move classes into separate files (e.g., Person.cs, BirthingUnit.cs). Grouping multiple distinct classes in one file harms maintainability.
     public class People
     {
         // [Bug - Logic Flaw]: 'static readonly' evaluates only once at class initialization; if the process runs continuously, Under16 becomes stale. Also, AddYears(-15) represents an Under-15 cutoff rather than Under-16 (should be AddYears(-16)). Fix: 'private static DateTimeOffset Under16 => DateTimeOffset.UtcNow.AddYears(-16);'
         private static readonly DateTimeOffset Under16 = DateTimeOffset.UtcNow.AddYears(-15);
 
         public string Name { get; private set; }
+
+        // [Architecture / Immutability]: DOB never changes after birth; it should be immutable ({ get; } or { get; init; }).
+        // [.NET 8]: Use 'DateOnly' instead of DateTime/DateTimeOffset for birth dates to eliminate time-of-day and timezone ambiguities.
         public DateTimeOffset DOB { get; private set; }
 
+        // [Architecture / Best Practices]: Constructor parameters mix DateTime with DateTimeOffset. Standardize on one type (or DateOnly), and add null/whitespace validation for 'name'.
         public People(string name) : this(name, Under16.Date) { }
 
         public People(string name, DateTime dob)
@@ -27,6 +32,7 @@ namespace Utility.Valocity.ProfileHelper
         /// <summary>
         /// MaxItemsToRetrieve
         /// </summary>
+        // [Architecture / Encapsulation]: Storing generated people in an instance field '_people' causes state accumulation across repeated calls to GetPeople. BirthingUnit should be a stateless generator or return a new list per invocation.
         private List<People> _people;
 
         public BirthingUnit()
@@ -41,12 +47,15 @@ namespace Utility.Valocity.ProfileHelper
         /// <returns>List<object></returns>
         public List<People> GetPeople(int i)
         {
+            // [Performance]: Pre-allocate list capacity: 'new List<People>(i)' to avoid repeated dynamic array resizing during generation.
             for (int j = 0; j < i; j++)
             {
                 try
                 {
                     // Creates a dandon Name
                     string name = string.Empty;
+
+                    // [Performance]: Instantiating 'new Random()' inside a tight loop causes unnecessary heap allocations. Use thread-safe 'Random.Shared' instead.
                     var random = new Random();
 
                     // [Bug - Logic Flaw]: Random.Next(min, max) has an exclusive upper bound. Next(0, 1) always returns 0, so 'name' will always be Bob and 'Betty' is unreachable dead code. Should be Random.Shared.Next(0, 2).
@@ -69,15 +78,19 @@ namespace Utility.Valocity.ProfileHelper
                     throw new Exception("Something failed in user creation");
                 }
             }
+            // [Architecture / Encapsulation]: Returning the private mutable list exposes internal state to external modification. Return IReadOnlyList<People> or a fresh list.
             return _people;
         }
 
+        // [Architecture / Dead Code]: Unused private method; verify if filtering functionality is required. If needed, expose it publicly or through a domain service.
+        // [Performance]: Compute cutoff date once before the LINQ query rather than calling DateTime.Now.Subtract(...) repeatedly for each element.
         private IEnumerable<People> GetBobs(bool olderThan30)
         {
             // [Bug - Logic Flaw]: Inverted comparison logic. 'DOB >= 30 years ago' filters people younger than 30. For older than 30, condition must be 'DOB <= cutoff' (or '<'). Also uses 356 days instead of 365.
             return olderThan30 ? _people.Where(x => x.Name == "Bob" && x.DOB >= DateTime.Now.Subtract(new TimeSpan(30 * 356, 0, 0, 0))) : _people.Where(x => x.Name == "Bob");
         }
 
+        // [Architecture / SOLID - SRP]: Single Responsibility Principle violation. Marriage and name-changing logic belongs to the Person class or a domain service, not BirthingUnit.
         public string GetMarried(People p, string lastName)
         {
             // [Bug - Null Safety]: If 'p' or 'lastName' is null, accessing properties/methods throws an unhandled NullReferenceException. Add null/empty validation checks.
@@ -91,6 +104,7 @@ namespace Utility.Valocity.ProfileHelper
                 (p.Name + " " + lastName).Substring(0, 255);
             }
 
+            // [Performance & Modern C#]: Use string interpolation ($"{p.Name} {lastName}") and range slicing ([..255]) to avoid repeated allocations and explicit Substring calls.
             return p.Name + " " + lastName;
         }
     }
