@@ -6,6 +6,7 @@ using System.Linq;
 namespace Utility.Valocity.ProfileHelper
 {
     // [Architecture / SOLID]: Move classes into separate files (e.g., Person.cs, BirthingUnit.cs). Grouping multiple distinct classes in one file harms maintainability.
+    // [Naming / Code Style]: The class represents a single individual entity and should be named 'Person' (singular), not 'People'.
     public class People
     {
         // [Bug - Logic Flaw]: 'static readonly' evaluates only once at class initialization; if the process runs continuously, Under16 becomes stale. Also, AddYears(-15) represents an Under-15 cutoff rather than Under-16 (should be AddYears(-16)). Fix: 'private static DateTimeOffset Under16 => DateTimeOffset.UtcNow.AddYears(-16);'
@@ -32,6 +33,7 @@ namespace Utility.Valocity.ProfileHelper
         /// <summary>
         /// MaxItemsToRetrieve
         /// </summary>
+        // [Code Style / Docs]: Misleading XML doc on private field ('MaxItemsToRetrieve' for a list of People). Remove or provide accurate documentation.
         // [Architecture / Encapsulation]: Storing generated people in an instance field '_people' causes state accumulation across repeated calls to GetPeople. BirthingUnit should be a stateless generator or return a new list per invocation.
         private List<People> _people;
 
@@ -45,6 +47,9 @@ namespace Utility.Valocity.ProfileHelper
         /// </summary>
         /// <param name="j"></param>
         /// <returns>List<object></returns>
+        // [Code Style / Docs]: Inaccurate XML doc: method summary is 'GetPeoples' (should be 'GetPeople'), param name is documented as 'j' (actual is 'i'), and return type is 'List<object>' (actual is 'List<People>').
+        // [Naming]: Parameter 'i' is non-descriptive; rename to 'count' or 'numberOfPeople'.
+        // [Defensive Programming]: Add validation to prevent negative count arguments (e.g. ArgumentOutOfRangeException.ThrowIfNegative(i)).
         public List<People> GetPeople(int i)
         {
             // [Performance]: Pre-allocate list capacity: 'new List<People>(i)' to avoid repeated dynamic array resizing during generation.
@@ -53,6 +58,7 @@ namespace Utility.Valocity.ProfileHelper
                 try
                 {
                     // Creates a dandon Name
+                    // [Code Style]: Typo in comment above ('dandon' -> 'random').
                     string name = string.Empty;
 
                     // [Performance]: Instantiating 'new Random()' inside a tight loop causes unnecessary heap allocations. Use thread-safe 'Random.Shared' instead.
@@ -91,6 +97,7 @@ namespace Utility.Valocity.ProfileHelper
         }
 
         // [Architecture / SOLID - SRP]: Single Responsibility Principle violation. Marriage and name-changing logic belongs to the Person class or a domain service, not BirthingUnit.
+        // [Naming]: Parameter 'p' is non-descriptive; rename to 'person'.
         public string GetMarried(People p, string lastName)
         {
             // [Bug - Null Safety]: If 'p' or 'lastName' is null, accessing properties/methods throws an unhandled NullReferenceException. Add null/empty validation checks.
