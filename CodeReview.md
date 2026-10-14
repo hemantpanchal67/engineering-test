@@ -7,14 +7,16 @@
 ---
 
 ## Table of Contents
-1. [Executive Summary](#executive-summary)
-2. [1. Blockers & Compilation Errors](#1-blockers--compilation-errors)
-3. [2. Bugs & Logic Flaws](#2-bugs--logic-flaws)
-4. [3. Architecture & SOLID Principles](#3-architecture--solid-principles)
-5. [4. Performance Considerations & Modern .NET 8](#4-performance-considerations--modern-net-8)
-6. [5. Code Style, Naming Conventions & Documentation](#5-code-style-naming-conventions--documentation)
-7. [Defect Summary Matrix](#defect-summary-matrix)
-8. [Upcoming Review Sections (Next Increments)](#upcoming-review-sections-next-increments)
+- [Executive Summary](#executive-summary)
+- [1. Blockers & Compilation Errors](#1-blockers--compilation-errors)
+- [2. Bugs & Logic Flaws](#2-bugs--logic-flaws)
+- [3. Architecture & SOLID Principles](#3-architecture--solid-principles)
+- [4. Performance Considerations & Modern .NET 8](#4-performance-considerations--modern-net-8)
+- [5. Code Style, Naming Conventions & Documentation](#5-code-style-naming-conventions--documentation)
+- [6. Reusability & Code Extensibility](#6-reusability--code-extensibility)
+- [7. Assumptions, Design Decisions & Trade-offs](#7-assumptions-design-decisions--trade-offs)
+- [8. Generative AI Usage Disclosure](#8-generative-ai-usage-disclosure)
+- [9. Defect Summary Matrix](#9-defect-summary-matrix)
 
 ---
 
@@ -22,10 +24,11 @@
 
 This code review documents **compilation blockers**, **runtime bugs / logic flaws**, **architectural & SOLID violations**, **performance inefficiencies**, and **code style / documentation issues** in `CodeToReview.cs`.
 
-Beyond the build failure and logic flaws, the current code exhibits significant readability and API design shortcomings:
+Beyond the build failure and logic flaws, the current code exhibits significant readability, extensibility, and API design shortcomings:
 - **Misleading Naming:** Using plural `People` for a singular domain entity and single-letter parameters (`i`, `j`, `p`).
 - **Erroneous XML Documentation:** Parameter and return types in XML docs do not match actual method signatures (`param name="j"` vs `i`, `returns List<object>` vs `List<People>`).
 - **Missing Guard Clauses:** No defensive boundary validation for method parameters.
+- **Architectural Coupling:** Factory logic is tightly coupled to marital domain behaviors and lacks interface abstractions for unit testing and dependency injection.
 
 ---
 
@@ -249,8 +252,6 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
 * **Recommended Fix:**
   Rename `People` to `Person`.
 
----
-
 ### 5.2 Non-Descriptive Parameter Names (`i`, `j`, `p`)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L48, #L51, #L94)
 * **Severity:** **Clean Code / Readability**
@@ -260,8 +261,6 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
   - In `GetMarried(People p, string lastName)`, parameter `p` is an abbreviated identifier that reduces code readability.
 * **Recommended Fix:**
   Use descriptive identifiers: `count` (or `numberOfPeople`), `index`, and `person`.
-
----
 
 ### 5.3 Inaccurate & Outdated XML Documentation
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L32-L34, #L43-L47)
@@ -273,7 +272,7 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
     * `<param name="j">` documents parameter `j`, but the actual method parameter is `i`.
     * `<returns>List<object></returns>` documents return type as `List<object>`, but the actual return type is `List<People>`.
 * **Recommended Fix:**
-  Correct the XML documentation tags or remove invalid comments:
+  Correct the XML documentation tags:
   ```csharp
   /// <summary>
   /// Generates a collection of simulated people.
@@ -282,8 +281,6 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
   /// <returns>A list of generated <see cref="Person"/> instances.</returns>
   ```
 
----
-
 ### 5.4 Typo in Source Comments (`dandon`)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L55)
 * **Severity:** **Minor Style**
@@ -291,8 +288,6 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
   `// Creates a dandon Name` contains an obvious spelling error (`dandon` instead of `random`).
 * **Recommended Fix:**
   Change to `// Creates a random name`.
-
----
 
 ### 5.5 Missing Defensive Parameter Validation
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L48)
@@ -307,7 +302,85 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
 
 ---
 
-## Defect Summary Matrix
+## 6. Reusability & Code Extensibility
+
+### 6.1 Composable LINQ Extension Methods
+* **Problem:** `GetBobs(bool olderThan30)` is hardcoded to a specific name ("Bob") and a specific age threshold (30). It cannot be reused for any other filtering requirement.
+* **Solution:** Replace `GetBobs` with generic, composable LINQ extension methods:
+  ```csharp
+  public static class PersonExtensions
+  {
+      public static IEnumerable<Person> FilterByName(this IEnumerable<Person> people, string name) =>
+          people.Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+      public static IEnumerable<Person> WhereOlderThan(this IEnumerable<Person> people, int age, DateOnly? asOf = null)
+      {
+          var today = asOf ?? DateOnly.FromDateTime(DateTime.UtcNow);
+          var cutoff = today.AddYears(-age);
+          return people.Where(p => p.DateOfBirth <= cutoff);
+      }
+  }
+  ```
+* **Impact:** Enables expressive queries like `people.FilterByName("Bob").WhereOlderThan(30)`.
+
+### 6.2 Interface Abstraction (`IPersonGenerator`)
+* **Problem:** `BirthingUnit` is a concrete class with no interface, preventing mocking in unit tests and violating the Dependency Inversion Principle (DIP).
+* **Solution:** Extract an `IPersonGenerator` interface:
+  ```csharp
+  public interface IPersonGenerator
+  {
+      IReadOnlyList<Person> GeneratePeople(int count);
+  }
+  ```
+* **Impact:** Allows dependency injection (`services.AddTransient<IPersonGenerator, BirthingUnit>()`) and enables test stubbing without random number generation.
+
+### 6.3 Configurable Name Provider Strategy (`INameProvider`)
+* **Problem:** First names `"Bob"` and `"Betty"` are hardcoded, preventing localization or larger data pools.
+* **Solution:** Extract an `INameProvider` abstraction that injects name datasets dynamically into the generator.
+
+### 6.4 .NET 8 `TimeProvider` Abstraction
+* **Problem:** Direct calls to `DateTime.UtcNow` create non-deterministic test behavior when testing time-sensitive boundary conditions (such as age calculations).
+* **Solution:** Inject .NET 8's built-in `TimeProvider` into services, allowing tests to inject `FakeTimeProvider` for 100% deterministic unit tests.
+
+---
+
+## 7. Assumptions, Design Decisions & Trade-offs
+
+### 7.1 Key Assumptions
+* **7.1.1 Target Runtime Environment:** Assumed the solution runs on modern .NET 8.0 / C# 12 as specified in the recruitment test instructions.
+* **7.1.2 Pure Calendar Nature of Date of Birth:** Assumed date of birth represents a calendar date rather than an exact timestamp, eliminating time zone conversions and time-of-day offsets.
+* **7.1.3 Simulation Generator Intent:** Assumed `BirthingUnit` is intended to be a transient simulation generator/factory rather than an in-memory repository that stores created entities.
+* **7.1.4 Domain Separation of Concerns:** Assumed marital status and surname alterations are domain entity behaviors belonging to `Person` or a dedicated domain service, not a factory service.
+
+### 7.2 Core Design Decisions
+* **7.2.1 Adopting `DateOnly`:** Replaced ambiguous `DateTime`/`DateTimeOffset` types with `DateOnly` to guarantee date-only semantics and prevent timezone drift.
+* **7.2.2 Historical Attribute Immutability:** Made `DateOfBirth` immutable (`{ get; }`) because birth dates cannot be altered post-birth.
+* **7.2.3 Stateless Factory Lifecycle:** Refactored `BirthingUnit` to generate and return fresh collections per invocation, eliminating the `_people` instance state leak.
+* **7.2.4 Fail-Fast Defensive Guard Clauses:** Implemented modern .NET guard clauses (`ArgumentException.ThrowIfNullOrWhiteSpace`, `ArgumentOutOfRangeException.ThrowIfNegative`) to surface contract violations immediately.
+
+### 7.3 Evaluated Trade-offs
+* **7.3.1 `DateOnly` vs Legacy Framework Compatibility:** 
+  * *Trade-off:* `DateOnly` requires .NET 6+. Callers using older frameworks would require conversions.
+  * *Decision:* Accepted because the project explicitly targets .NET 8.0.
+* **7.3.2 Silent Truncation vs Validation Exception in `ChangeLastName`:**
+  * *Trade-off:* Throwing an exception when exceeding 255 characters would be strictly defensive, but might break existing simulation behavior.
+  * *Decision:* Preserved the original business requirement of truncating at 255 characters using clean range slicing `[..255]`.
+* **7.3.3 Stateless Generation vs In-Memory Persistence:**
+  * *Trade-off:* Callers must now store generated lists themselves.
+  * *Decision:* Accepted to prevent memory leaks and adhere to the Single Responsibility Principle.
+
+---
+
+## 8. Generative AI Usage Disclosure
+
+In compliance with the Valocity recruitment test guidelines regarding generative AI usage:
+* **8.1 Where Used:** AI was utilized as a pair-review assistant to cross-reference C# compiler diagnostics (`CS0234`, `CS0168`), format comparison markdown tables, and verify modern .NET 8 API conventions (`DateOnly`, `TimeProvider`, `ArgumentException.ThrowIfNullOrWhiteSpace`).
+* **8.2 Why Used:** To revalidate manually identified code review feedback, cross validating.
+* **8.3 Feedback Reframing & Skill-Mapping Framework:** AI was leveraged to reframe inline code comments into a structured, categorized feedback hierarchy (Bugs, Architecture/SOLID, Performance, Clean Code). This structured categorization makes it easy for engineering leadership to identify an individual developer's technical strengths and coaching opportunities, establishing an objective baseline for future pull request reviews and targeted code quality improvements.
+
+---
+
+## 9. Defect Summary Matrix
 
 | # | File Ref | Category | Description | Severity |
 |---|----------|----------|-------------|----------|
@@ -332,11 +405,3 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
 | 19 | Lines 33, 44 | Documentation | Misleading XML docs (`param name="j"`, `List<object>`) | **Minor** |
 | 20 | Line 55 | Clean Code | Comment typo (`dandon` -> `random`) | **Trivial** |
 | 21 | Line 48 | Robustness | Missing guard clause for negative counts | **Minor** |
-
----
-
-## Upcoming Review Sections (Next Increments)
-
-* **Section 6:** Reusability & Code Extensibility (LINQ Extensions, `IPersonGenerator`, `TimeProvider`)
-* **Section 7:** Assumptions, Design Decisions & Trade-offs
-* **Section 8:** Proposed Production Refactoring (.NET 8 / C# 12) & Generative AI Usage Disclosure
