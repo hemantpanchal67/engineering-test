@@ -8,6 +8,7 @@ public class UpdateQualityTests
     private const string Brie = "Aged Brie";
     private const string Sulfuras = "Sulfuras, Hand of Ragnaros";
     private const string Pass = "Backstage passes to a TAFKAL80ETC concert";
+    private const string Conjured = "Conjured Mana Cake";
 
     private static Item Run(string name, int sellIn, int quality)
     {
@@ -29,6 +30,9 @@ public class UpdateQualityTests
     [InlineData(Pass, 5, 20, 4, 23)]
     [InlineData(Pass, 5, 49, 4, 50)]
     [InlineData(Pass, 0, 20, -1, 0)]
+    [InlineData(Conjured, 3, 6, 2, 4)]
+    [InlineData(Conjured, 0, 6, -1, 2)]
+    [InlineData(Conjured, 3, 1, 2, 0)]
     public void Updates_item_for_one_day(string name, int sellIn, int quality, int expectedSellIn, int expectedQuality)
     {
         var item = Run(name, sellIn, quality);
