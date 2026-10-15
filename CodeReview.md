@@ -52,7 +52,7 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
 
 ## 2. Bugs & Logic Flaws
 
-### 2.1 Stale Static Date & Under-15 vs Under-16 Boundary
+### 2.1 Stale Static Date Used as a Default Date of Birth
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L13)
 * **Severity:** **Major Bug**
 * **Issue:**
@@ -60,11 +60,13 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
   private static readonly DateTimeOffset Under16 = DateTimeOffset.UtcNow.AddYears(-15);
   ```
   - `static readonly` fields are evaluated only once when the class is loaded. In long-running processes, this date becomes progressively stale.
-  - `AddYears(-15)` represents an under-15 cutoff rather than under-16.
+  - The field is named `Under16` but its meaning is unclear: `AddYears(-15)` produces the date of birth of a 15-year-old, which is under 16, but the name and the value do not make the intent obvious. Note that `AddYears(-16)` would be a 16-year-old, which is *not* under 16, so the offset should not be changed without clarifying whether this is a default value or a cutoff boundary.
 * **Recommended Fix:**
+  Evaluate the date on each use instead of once, and name it for what it is:
   ```csharp
-  private static DateTimeOffset Under16Cutoff => DateTimeOffset.UtcNow.AddYears(-16);
+  private static DateTimeOffset DefaultDateOfBirth => DateTimeOffset.UtcNow.AddYears(-15);
   ```
+  If a cutoff for "under 16" is intended instead, compare with an exclusive boundary (`dob > DateTimeOffset.UtcNow.AddYears(-16)`).
 
 ### 2.2 Exclusive Upper Bound on `Random.Next(0, 1)` (Betty Unreachable)
 * **File:** [`CodeToReview.cs`](CodeToReview.cs#L71-L78)
@@ -83,7 +85,7 @@ Beyond the build failure and logic flaws, the current code exhibits significant 
   Using 356 days instead of 365 introduces a 9-day drift per year and disregards leap years.
 * **Recommended Fix:**
   ```csharp
-  int age = Random.Shared.Next(18, 86);
+  int age = Random.Shared.Next(18, 85); // same 18-84 range as the original
   DateTime dateOfBirth = DateTime.UtcNow.AddYears(-age);
   ```
 
@@ -438,7 +440,7 @@ In compliance with the Valocity recruitment test guidelines regarding generative
 | # | File Ref | Category | Description | Severity |
 |---|----------|----------|-------------|----------|
 | 1 | Line 3 | Blocker | Typo `System.Collegctions.Generic` | **Blocker** (`CS0234`) |
-| 2 | Line 13 | Logic Bug | Stale static `Under16` & `-15` threshold | **Major** |
+| 2 | Line 13 | Logic Bug | Stale static `Under16` default date (evaluated once) | **Major** |
 | 3 | Line 71 | Logic Bug | `Random.Next(0, 1)` exclusive upper bound | **Critical** |
 | 4 | Line 82 | Logic Bug | 356 days instead of 365, leap year omission | **Major** |
 | 5 | Line 84 | Error Handling | Discarded exception stack trace & unused variable | **Major** (`CS0168`) |
