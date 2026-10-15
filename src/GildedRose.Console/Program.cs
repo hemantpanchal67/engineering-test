@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace GildedRose.Console;
 
@@ -36,8 +36,12 @@ public class Program
 
     public void UpdateQuality()
     {
+        // Runs once per day: updates Quality and SellIn for every item.
+        // Rules: Quality is never negative and never above 50 (except Sulfuras, fixed at 80).
         for (var i = 0; i < Items.Count; i++)
         {
+            // Normal items (not Aged Brie / Backstage passes): Quality drops by 1 per day.
+            // Sulfuras is legendary and never changes. Quality never goes below 0.
             if (Items[i].Name != "Aged Brie" && Items[i].Name != "Backstage passes to a TAFKAL80ETC concert")
             {
                 if (Items[i].Quality > 0)
@@ -50,10 +54,13 @@ public class Program
             }
             else
             {
+                // Aged Brie and Backstage passes increase in Quality as they age (max 50).
                 if (Items[i].Quality < 50)
                 {
                     Items[i].Quality = Items[i].Quality + 1;
 
+                    // Backstage passes gain extra Quality as the concert nears:
+                    // +2 total when 10 days or fewer remain, +3 total when 5 days or fewer remain.
                     if (Items[i].Name == "Backstage passes to a TAFKAL80ETC concert")
                     {
                         if (Items[i].SellIn < 11)
@@ -75,17 +82,20 @@ public class Program
                 }
             }
 
+            // SellIn drops by 1 each day; Sulfuras is never sold so its SellIn never changes.
             if (Items[i].Name != "Sulfuras, Hand of Ragnaros")
             {
                 Items[i].SellIn = Items[i].SellIn - 1;
             }
 
+            // Sell-by date has passed.
             if (Items[i].SellIn < 0)
             {
                 if (Items[i].Name != "Aged Brie")
                 {
                     if (Items[i].Name != "Backstage passes to a TAFKAL80ETC concert")
                     {
+                        // Normal items degrade twice as fast after the sell-by date (another -1).
                         if (Items[i].Quality > 0)
                         {
                             if (Items[i].Name != "Sulfuras, Hand of Ragnaros")
@@ -96,11 +106,13 @@ public class Program
                     }
                     else
                     {
+                        // Backstage passes are worthless after the concert: Quality drops to 0.
                         Items[i].Quality = Items[i].Quality - Items[i].Quality;
                     }
                 }
                 else
                 {
+                    // Aged Brie keeps increasing in Quality (max 50), even after the sell-by date.
                     if (Items[i].Quality < 50)
                     {
                         Items[i].Quality = Items[i].Quality + 1;
