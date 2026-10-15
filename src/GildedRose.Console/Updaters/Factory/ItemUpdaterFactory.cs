@@ -7,7 +7,7 @@ namespace GildedRose.Console.Updaters.Factory;
 /// Factory: chooses the updater for an item. To support a new category, add a class
 /// and one registration here; nothing else changes.
 /// </summary>
-public class ItemUpdaterFactory
+public class ItemUpdaterFactory : IItemUpdaterFactory
 {
     private const string ConjuredPrefix = "Conjured";
 
