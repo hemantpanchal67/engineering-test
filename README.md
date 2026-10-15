@@ -1,5 +1,12 @@
 # Valocity Engineering Recruitment Test
 
+## Candidate Submission
+
+- **Exercise 1 (Code Review):** [CodeReview.md](CodeReview.md)
+- **Exercise 2 (Gilded Rose):** [SOLUTION.md](SOLUTION.md) covers the approach, design decisions,
+  assumptions, trade-offs, testing and AI usage. The code is in `src/GildedRose.Console/Updaters`.
+- **Run the build and tests:** `build.bat` from PowerShell, or `dotnet test`.
+
 Welcome to the Valocity Engineering recruitment test repository! This repository contains two exercises designed to assess candidates for intern and software engineering positions.
 
 ## Technology
