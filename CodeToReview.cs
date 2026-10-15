@@ -19,6 +19,7 @@ namespace Utility.Valocity.ProfileHelper
         public DateTimeOffset DOB { get; private set; }
 
         // [Architecture / Best Practices]: Constructor parameters mix DateTime with DateTimeOffset. Standardize on one type (or DateOnly), and add null/whitespace validation for 'name'.
+        // [Bug - Time Zone / Hidden Default]: Under16.Date returns a DateTime with Kind=Unspecified and drops the time; the second constructor then converts it using the server local offset, so the default DOB depends on the machine time zone. The constructor also silently invents a date of birth instead of requiring one.
         public People(string name) : this(name, Under16.Date) { }
 
         public People(string name, DateTime dob)
@@ -35,6 +36,7 @@ namespace Utility.Valocity.ProfileHelper
         /// </summary>
         // [Code Style / Docs]: Misleading XML doc on private field ('MaxItemsToRetrieve' for a list of People). Remove or provide accurate documentation.
         // [Architecture / Encapsulation]: Storing generated people in an instance field '_people' causes state accumulation across repeated calls to GetPeople. BirthingUnit should be a stateless generator or return a new list per invocation.
+        // [Clean Code]: The field is only assigned in the constructor; mark it readonly (moot if the state is removed as recommended above).
         private List<People> _people;
 
         public BirthingUnit()
@@ -55,6 +57,7 @@ namespace Utility.Valocity.ProfileHelper
             // [Performance]: Pre-allocate list capacity: 'new List<People>(i)' to avoid repeated dynamic array resizing during generation.
             for (int j = 0; j < i; j++)
             {
+                // [Design]: Unnecessary and overly broad try/catch. Nothing inside is expected to fail, and catching the base Exception to rethrow a generic one hides programming errors. Remove it, or catch specific exceptions and add context (e.g. the index).
                 try
                 {
                     // Creates a dandon Name
@@ -93,14 +96,17 @@ namespace Utility.Valocity.ProfileHelper
         private IEnumerable<People> GetBobs(bool olderThan30)
         {
             // [Bug - Logic Flaw]: Inverted comparison logic. 'DOB >= 30 years ago' filters people younger than 30. For older than 30, condition must be 'DOB <= cutoff' (or '<'). Also uses 356 days instead of 365.
+            // [Bug - Time Zone]: DOB is generated from DateTime.UtcNow, but it is compared here with DateTime.Now (local time). The local offset is applied during the DateTimeOffset comparison, so the 30-year boundary shifts with the server time zone. Use one time source (UtcNow or an injected TimeProvider).
             return olderThan30 ? _people.Where(x => x.Name == "Bob" && x.DOB >= DateTime.Now.Subtract(new TimeSpan(30 * 356, 0, 0, 0))) : _people.Where(x => x.Name == "Bob");
         }
 
         // [Architecture / SOLID - SRP]: Single Responsibility Principle violation. Marriage and name-changing logic belongs to the Person class or a domain service, not BirthingUnit.
         // [Naming]: Parameter 'p' is non-descriptive; rename to 'person'.
+        // [Design / Misleading Contract]: Despite its name, GetMarried never marries anyone: it only builds and returns a string and never updates the person (Name has a private setter). Rename it (e.g. FormatFullName) or move the behavior into the entity (person.ChangeLastName).
         public string GetMarried(People p, string lastName)
         {
             // [Bug - Null Safety]: If 'p' or 'lastName' is null, accessing properties/methods throws an unhandled NullReferenceException. Add null/empty validation checks.
+            // [Bug - Hidden Behavior]: Hard-coded "test" back door. If the surname merely contains the substring "test" (case-sensitive), the method silently returns the unmarried name. This looks like leftover test logic; remove it from production code and use test doubles instead.
             if (lastName.Contains("test"))
                 return p.Name;
 
