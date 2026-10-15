@@ -20,6 +20,9 @@ src/GildedRose.Console
 
 ## Design diagrams
 
+**Colour key:** grey = client, yellow = factory, blue = interfaces (contracts), orange = template base
+class, green = strategies built on the template, purple = strategy implemented directly.
+
 ### Class diagram
 `Program` depends only on the two interfaces. The Template Method (`ItemUpdater`) holds the shared
 steps, and the strategies override only what differs. `SulfurasUpdater` implements the strategy
@@ -55,12 +58,8 @@ classDiagram
     class AgedBrieUpdater
     class BackstagePassUpdater
     class SulfurasUpdater
-    class ItemTableWriter {
-        +Write(TextWriter, changes)
-    }
 
     Program --> IItemUpdaterFactory : asks for an updater
-    Program --> ItemTableWriter : prints the report
     IItemUpdaterFactory <|.. ItemUpdaterFactory
     ItemUpdaterFactory ..> IItemUpdater : returns
     IItemUpdater <|.. ItemUpdater
@@ -69,16 +68,40 @@ classDiagram
     ItemUpdater <|-- AgedBrieUpdater
     ItemUpdater <|-- BackstagePassUpdater
     NormalItemUpdater <|-- ConjuredItemUpdater
+
+    classDef client fill:#e5e7eb,stroke:#6b7280,stroke-width:2px,color:#111827
+    classDef factory fill:#fef08a,stroke:#ca8a04,stroke-width:2px,color:#111827
+    classDef contract fill:#bfdbfe,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef template fill:#fed7aa,stroke:#ea580c,stroke-width:2px,color:#111827
+    classDef strategy fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef direct fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#111827
+    cssClass "Program" client
+    cssClass "ItemUpdaterFactory" factory
+    cssClass "IItemUpdaterFactory,IItemUpdater" contract
+    cssClass "ItemUpdater" template
+    cssClass "NormalItemUpdater,ConjuredItemUpdater,AgedBrieUpdater,BackstagePassUpdater" strategy
+    cssClass "SulfurasUpdater" direct
 ```
 
 ### How the factory picks an updater
 ```mermaid
 flowchart TD
-    A[Item] --> B{Name is Aged Brie,<br/>Backstage passes or Sulfuras?}
+    A([Item]) --> B{Name is Aged Brie,<br/>Backstage passes or Sulfuras?}
     B -- yes --> C[Matching updater]
     B -- no --> D{Name starts with Conjured?}
     D -- yes --> E[ConjuredItemUpdater]
     D -- no --> F[NormalItemUpdater]
+
+    classDef start fill:#e5e7eb,stroke:#6b7280,stroke-width:2px,color:#111827
+    classDef decision fill:#fef08a,stroke:#ca8a04,stroke-width:2px,color:#111827
+    classDef special fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#111827
+    classDef conjured fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#111827
+    classDef normal fill:#bfdbfe,stroke:#2563eb,stroke-width:2px,color:#111827
+    class A start
+    class B,D decision
+    class C special
+    class E conjured
+    class F normal
 ```
 
 ### One day's update (Template Method)
@@ -87,15 +110,24 @@ sequenceDiagram
     participant P as Program
     participant F as ItemUpdaterFactory
     participant U as ItemUpdater (strategy)
-    P->>F: GetUpdater(item)
-    F-->>P: strategy for the item
-    P->>U: Update(item)
-    U->>U: UpdateQuality(item)
-    U->>U: Age(item) - SellIn decreases by 1
-    alt SellIn is below 0
-        U->>U: UpdateExpiredQuality(item)
+
+    rect rgb(254, 240, 138)
+        Note over P,F: 1. Choose the strategy
+        P->>F: GetUpdater(item)
+        F-->>P: strategy for the item
     end
-    P->>P: print before/after table
+    rect rgb(191, 219, 254)
+        Note over P,U: 2. Run the fixed template
+        P->>U: Update(item)
+        U->>U: UpdateQuality(item)
+        U->>U: Age(item) - SellIn decreases by 1
+    end
+    rect rgb(187, 247, 208)
+        alt SellIn is below 0
+            U->>U: UpdateExpiredQuality(item)
+        end
+    end
+    P->>P: print the item line
 ```
 
 ## Design decisions
@@ -262,3 +294,12 @@ protected override int DegradeRate => DailyDegradeRate;
 - After the major changes, used AI again to make sure the code has meaningful inline comments.
 - Used AI to check for performance degradation and for dead code still to be cleared (for
   example the unused `virtual` on the age step and the empty Sulfuras overrides were removed).
+
+### 4. Documentation and diagrams
+- Used AI to create the instruction and documentation files for this submission: `SOLUTION.md`
+  (approach, design decisions, assumptions, trade-offs, testing and this AI disclosure) and the
+  submission pointer at the top of the `README.md`.
+- Used AI to create the design diagrams (class, factory-selection and sequence diagrams, written
+  in Mermaid), including their colour styling.
+- I reviewed the documents and diagrams against the final code and corrected them where they
+  no longer matched, for example after code that was removed.
