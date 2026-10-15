@@ -17,7 +17,7 @@ public abstract class ItemUpdater : IItemUpdater
     // Rule: "The Quality of an item is never more than 50."
     protected const int MaxQuality = 50;
 
-    public virtual void Update(Item item)
+    public void Update(Item item)
     {
         UpdateQuality(item);
         Age(item);

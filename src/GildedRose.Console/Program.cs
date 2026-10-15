@@ -50,6 +50,7 @@ public class Program
     {
         foreach (var item in Items)
         {
+            //Factory keeps item-to-rule selection in one place, and Program doesn’t know the concrete classes.
             _updaterFactory.GetUpdater(item).Update(item);
 
             System.Console.WriteLine("Item Name: " + item.Name + ", SellIn: " + item.SellIn + ", Quality: " + item.Quality);
