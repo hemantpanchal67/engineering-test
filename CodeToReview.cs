@@ -9,7 +9,7 @@ namespace Utility.Valocity.ProfileHelper
     // [Naming / Code Style]: The class represents a single individual entity and should be named 'Person' (singular), not 'People'.
     public class People
     {
-        // [Bug - Logic Flaw]: 'static readonly' evaluates only once at class initialization; if the process runs continuously, Under16 becomes stale. Also, AddYears(-15) represents an Under-15 cutoff rather than Under-16 (should be AddYears(-16)). Fix: 'private static DateTimeOffset Under16 => DateTimeOffset.UtcNow.AddYears(-16);'
+        // [Bug - Logic Flaw]: 'static readonly' evaluates only once at class initialization; if the process runs continuously, Under16 becomes stale. The name is also unclear: AddYears(-15) is the DOB of a 15-year-old (under 16), so the offset should not simply be changed to -16 (that would be exactly 16). Fix: evaluate on each use, e.g. 'private static DateTimeOffset DefaultDateOfBirth => DateTimeOffset.UtcNow.AddYears(-15);', and document whether this is a default value or a cutoff.
         private static readonly DateTimeOffset Under16 = DateTimeOffset.UtcNow.AddYears(-15);
 
         public string Name { get; private set; }
