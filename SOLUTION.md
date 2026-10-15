@@ -24,7 +24,8 @@ src/GildedRose.Console
 class, green = strategies built on the template, purple = strategy implemented directly.
 
 ### Class diagram
-`Program` depends only on the two interfaces. The Template Method (`ItemUpdater`) holds the shared
+`Program` works through the two interfaces and receives the factory through its constructor; only its
+default constructor creates the concrete `ItemUpdaterFactory`. The Template Method (`ItemUpdater`) holds the shared
 steps, and the strategies override only what differs. `SulfurasUpdater` implements the strategy
 interface directly because none of the daily steps apply to it.
 
@@ -60,6 +61,7 @@ classDiagram
     class SulfurasUpdater
 
     Program --> IItemUpdaterFactory : asks for an updater
+    Program ..> ItemUpdaterFactory : default instance
     IItemUpdaterFactory <|.. ItemUpdaterFactory
     ItemUpdaterFactory ..> IItemUpdater : returns
     IItemUpdater <|.. ItemUpdater
