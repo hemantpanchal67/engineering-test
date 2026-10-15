@@ -4,19 +4,13 @@ namespace GildedRose.Console.Updaters.Strategies;
 
 /// <summary>
 /// Rule: "Sulfuras", being a legendary item, never has to be sold or decreases in Quality.
-/// Its Quality is 80 and it never alters.
+/// Its Quality is 80 and it never alters (the only exception to the 0-50 Quality range).
+/// Implements the contract directly because none of the daily template steps apply.
 /// </summary>
-public class SulfurasUpdater : ItemUpdater
+public class SulfurasUpdater : IItemUpdater
 {
-    protected override void UpdateQuality(Item item)
+    public void Update(Item item)
     {
-    }
-
-    protected override void UpdateExpiredQuality(Item item)
-    {
-    }
-
-    protected override void Age(Item item)
-    {
+        // Legendary item: SellIn and Quality never change.
     }
 }

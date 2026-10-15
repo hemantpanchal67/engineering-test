@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using GildedRose.Console.Updaters.Abstractions;
 using GildedRose.Console.Updaters.Factory;
 
 namespace GildedRose.Console;
@@ -7,7 +7,16 @@ public class Program
 {
     public IList<Item> Items = new List<Item>();
 
-    private readonly ItemUpdaterFactory _updaterFactory = new();
+    private readonly IItemUpdaterFactory _updaterFactory;
+
+    public Program() : this(new ItemUpdaterFactory())
+    {
+    }
+
+    public Program(IItemUpdaterFactory updaterFactory)
+    {
+        _updaterFactory = updaterFactory;
+    }
 
     static void Main(string[] args)
     {

@@ -36,7 +36,7 @@ public abstract class ItemUpdater : IItemUpdater
     protected abstract void UpdateExpiredQuality(Item item);
 
     // Rule: "At the end of each day our system lowers both values for every item."
-    protected virtual void Age(Item item) => item.SellIn--;
+    private static void Age(Item item) => item.SellIn--;
 
     /// <summary>Applies a delta while keeping quality within [MinQuality, MaxQuality].</summary>
     protected static void ChangeQuality(Item item, int delta)
